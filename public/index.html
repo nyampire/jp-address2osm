@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>住所タグ分割</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700&display=swap">
+<!-- include:style -->
+<style>
+/* トップだけの部品：入力、結果の枠、住所の構造。黄色は推測の札と枠にだけ使う */
+:root { --guess-line: #c9a227; --guess-bg: #fff3c4; --guess-fg: #6b5000; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --guess-line: #d4b13f; --guess-bg: #3a3112; --guess-fg: #f1d98a; }
+}
+:root[data-theme="dark"] { --guess-line: #d4b13f; --guess-bg: #3a3112; --guess-fg: #f1d98a; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.lead { margin: 0; max-width: 62ch; }
+.input-block { display: grid; gap: 10px; }
+textarea#addr {
+  width: 100%; min-height: 64px; resize: vertical;
+  font: 1.05rem/1.6 var(--font-ui); color: var(--fg); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+}
+textarea#addr:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.examples { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.examples span { font-size: 0.85rem; color: var(--muted); }
+button { font: inherit; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.primary {
+  background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 6px;
+  padding: 6px 16px; font-weight: 700;
+}
+.primary.small { padding: 4px 14px; font-size: 0.88rem; }
+.primary.done { opacity: 0.8; }
+.ex {
+  background: transparent; color: var(--accent); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 12px; font-size: 0.85rem;
+}
+.ex:hover { border-color: var(--accent); }
+
+.result {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 14px 16px; display: grid; gap: 10px; min-width: 0;
+}
+.result.guessed { border: 2px solid var(--guess-line); }
+.result p { margin: 0; }
+.result-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.result-head h2 { font-size: 1rem; margin: 0; }
+.tags {
+  margin: 0; background: var(--bg); border-radius: 6px; padding: 8px 12px;
+  font: 0.95rem/1.75 var(--font-tag); font-variant-numeric: tabular-nums;
+}
+.tags > * { display: block; overflow-wrap: anywhere; white-space: pre-wrap; }
+.tags label { cursor: pointer; }
+.tags label input { margin: 0 6px 0 0; vertical-align: -1px; }
+.tags label.off { opacity: 0.5; }
+.copy-fallback {
+  width: 100%; min-height: 6em; font: 0.9rem/1.6 var(--font-tag); color: var(--fg);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+}
+.small-note { font-size: 0.85rem; color: var(--muted); }
+.verdict { display: flex; gap: 4px 10px; align-items: baseline; flex-wrap: wrap; }
+.verdict b { min-width: 0; }
+.pill {
+  font-size: 0.8rem; font-weight: 700; padding: 1px 10px; border-radius: 999px; white-space: nowrap;
+  background: var(--accent-soft); color: var(--fg);
+}
+.pill.guessed { background: var(--guess-bg); color: var(--guess-fg); }
+.pill.none { background: var(--line); color: var(--fg); }
+.reason { font-size: 0.92rem; }
+details summary { font-size: 0.92rem; cursor: pointer; }
+details .tags { margin-top: 6px; }
+details .actions { margin-top: 6px; }
+.empty {
+  background: var(--surface); border: 1px dashed var(--line); border-radius: 10px;
+  padding: 18px; color: var(--muted);
+}
+
+.structure { display: grid; gap: 6px; min-width: 0; }
+.structure h2 { font-size: 1rem; margin: 0; }
+.structure table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.structure th { text-align: left; font-weight: 700; color: var(--muted); border-bottom: 1px solid var(--line); }
+.structure :is(th, td) { padding: 4px 8px 4px 0; vertical-align: top; overflow-wrap: anywhere; }
+.structure td { border-bottom: 1px solid var(--line); }
+.structure code { font-family: var(--font-tag); font-size: 0.92em; }
+@media (prefers-reduced-motion: no-preference) {
+  .primary { transition: opacity 0.15s; }
+}
+</style>
+</head>
+<body>
+<!-- include:header -->
+<main class="wrap">
+  <section class="input-block">
+    <p class="lead">住所の文字列を、OSMの<code>addr:*</code>タグに分けます。結果をコピーして、iD、Rapid、JOSMのタグ欄に貼り付けてください。</p>
+    <label class="visually-hidden" for="addr">住所</label>
+    <textarea id="addr" spellcheck="false">高知県四万十市中村一条通３－２－２３ 中村ビル3F 301号室</textarea>
+    <div class="actions">
+      <button class="primary" id="go" type="button">タグに分割</button>
+      <div class="examples">
+        <span>サンプル住所：</span>
+        <button class="ex" type="button" data-addr="高知県高知市北本町１ー２ー６">高知市北本町1-2-6</button>
+        <button class="ex" type="button" data-addr="高知県安芸郡芸西村和食甲１５１３－１">芸西村和食甲1513-1</button>
+        <button class="ex" type="button" data-addr="高知県四万十市中村一条通３ー２ー２３">四万十市中村一条通3-2-23</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="result" aria-live="polite"></section>
+  <section id="structure" class="structure" aria-labelledby="structure-title" hidden>
+    <h2 id="structure-title">住所の構造</h2>
+    <div id="structure-body"></div>
+  </section>
+</main>
+<!-- include:footer -->
+
+<script>
+// 応答の文字列は textContent で入れる（innerHTML を使わない）
+const OPTIONAL_KEYS = ["addr:housename", "addr:floor", "addr:unit"];
+const OPTIONAL_ROLE = { "addr:housename": "建物名", "addr:floor": "階", "addr:unit": "部屋番号" };
+const PLACE = {
+  postcode: ["郵便番号", "addr:postcode"], prefecture: ["都道府県", "addr:province"], county: ["郡", "addr:county"],
+  city: ["市区町村", "addr:city"], ward: ["区", "addr:suburb"], quarter: ["大字", "addr:quarter"],
+  neighbourhood: ["町字", "addr:neighbourhood"], block_number: ["街区符号", "addr:block_number"],
+  housenumber: ["住居番号", "addr:housenumber"],
+};
+const KIND_PILL = { jukyo: "住居表示", chiban: "地番", town: "町字まで" };
+const OTHER_TITLE = { jukyo: "住居表示の場合", chiban: "地番の場合", town: "町字までの場合" };
+const FULL_NOTE = "addr:fullは、貼った住所を正規化した文字列です（郵便番号を除き、建物名は残します）。";
+
+function el(tag, attrs = {}, children = []) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k === "text") e.textContent = v; else e.setAttribute(k, v);
+  }
+  for (const c of [].concat(children)) if (c) e.append(c);
+  return e;
+}
+
+const lines = (tags) => Object.entries(tags).map(([k, v]) => `${k}=${v}`);
+
+// クリップボードに書けないときは、コピーする文字列だけを入れた欄を出して選択する
+async function copyLines(btn, getText, fallbackHost) {
+  const text = getText();
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = "コピーしました";
+  } catch {
+    let area = fallbackHost.querySelector(":scope > .copy-fallback");
+    if (!area) {
+      area = el("textarea", { class: "copy-fallback", readonly: "", "aria-label": "コピーするタグ" });
+      fallbackHost.append(area);
+    }
+    area.value = text;
+    area.focus();
+    area.select();
+    btn.textContent = "選択しました。Ctrl+Cでコピー";
+  }
+  btn.classList.add("done");
+  setTimeout(() => { btn.textContent = "コピー"; btn.classList.remove("done"); }, 2000);
+}
+
+function copyButton(getText, fallbackHost, small) {
+  const btn = el("button", { class: small ? "primary small" : "primary", type: "button", text: "コピー" });
+  btn.addEventListener("click", () => copyLines(btn, getText, fallbackHost));
+  return btn;
+}
+
+const root = document.getElementById("result");
+const structure = document.getElementById("structure");
+const structureBody = document.getElementById("structure-body");
+const input = document.getElementById("addr");
+
+function clearStructure() {
+  structure.hidden = true;
+  structureBody.replaceChildren();
+}
+
+function showMessage(text) {
+  clearStructure();
+  root.replaceChildren(el("div", { class: "result" }, [el("p", { text })]));
+}
+
+// 結果として出す候補。推測の印のあるものを先に選ぶ
+function pickPrimary(data) {
+  return data.candidates.find((c) => c.guessed) ?? data.candidates[0];
+}
+
+function pillFor(data, primary) {
+  if (!primary) return ["none", "分けられない"];
+  if (primary.guessed) return ["guessed", "推測"];
+  return ["", KIND_PILL[primary.kind] ?? primary.kind];
+}
+
+function renderResult(data) {
+  const primary = pickPrimary(data);
+  const box = el("div", { class: primary?.guessed ? "result guessed" : "result" });
+
+  if (primary) {
+    const optional = OPTIONAL_KEYS.filter((k) => primary.optionalTags?.[k] !== undefined)
+      .map((k) => [k, primary.optionalTags[k]]);
+    const tagBox = el("div", { class: "tags" });
+    for (const line of lines(primary.tags)) tagBox.append(el("span", { text: line }));
+    const checks = [];
+    for (const [k, v] of optional) {
+      const cb = el("input", { type: "checkbox" });
+      const label = el("label", { class: "off" }, [cb, `${k}=${v}`]);
+      cb.addEventListener("change", () => label.classList.toggle("off", !cb.checked));
+      checks.push([cb, `${k}=${v}`]);
+      tagBox.append(label);
+    }
+    const getText = () => [...lines(primary.tags), ...checks.filter(([cb]) => cb.checked).map(([, l]) => l)].join("\n");
+    box.append(el("div", { class: "result-head" }, [el("h2", { text: "タグ" }), copyButton(getText, box)]), tagBox);
+    if (optional.length > 0) {
+      box.append(el("p", { class: "small-note",
+        text: `下の${optional.length}行は、番地の後ろの文字列から推測した候補です。チェックした行だけコピーされます。` }));
+    }
+  }
+
+  // 札の横に最初の1文を太字で出し、残りを理由の文にする
+  const [pillClass, pillText] = pillFor(data, primary);
+  const message = data.message ?? "";
+  const cut = message.indexOf("。");
+  const head = cut >= 0 ? message.slice(0, cut + 1) : message;
+  const rest = cut >= 0 ? message.slice(cut + 1) : "";
+  box.append(el("div", { class: "verdict" }, [el("span", { class: `pill ${pillClass}`.trim(), text: pillText }), el("b", { text: head })]));
+  if (rest) box.append(el("p", { class: "reason", text: rest }));
+
+  if (primary?.tags["addr:full"] !== undefined) box.append(el("p", { class: "small-note", text: FULL_NOTE }));
+
+  // 推測のときの町字までの版などは畳んで添える（候補の行は出さない）
+  for (const c of data.candidates) {
+    if (c === primary) continue;
+    const title = primary.guessed ? "番地を入れずに町字までにする" : (OTHER_TITLE[c.kind] ?? c.kind);
+    const text = lines(c.tags).join("\n");
+    const details = el("details", {}, [el("summary", { text: title }), el("div", { class: "tags" }, lines(c.tags).map((l) => el("span", { text: l })))]);
+    details.append(el("div", { class: "actions" }, [copyButton(() => text, details, true)]));
+    box.append(details);
+  }
+
+  root.replaceChildren(box);
+  renderStructure(data, primary);
+}
+
+// building.ts と同じ規則で、建物名などの残りを区切りの文字列に分ける。応答の候補と合わなければ null
+function splitRemainder(value, optionalTags) {
+  let text = value.normalize("NFKC").trim();
+  const parts = [];
+  const unit = /(\d+)号室?$/.exec(text);
+  if (unit) { parts.unshift(["addr:unit", text.slice(unit.index), unit[1]]); text = text.slice(0, unit.index).trimEnd(); }
+  const floor = /(?<![A-Za-z\d])(\d+)(?:F|階)$/i.exec(text);
+  if (floor) { parts.unshift(["addr:floor", text.slice(floor.index), floor[1]]); text = text.slice(0, floor.index).trimEnd(); }
+  text = text.trim();
+  if (text) parts.unshift(["addr:housename", text, text]);
+  const keys = Object.keys(optionalTags);
+  if (parts.length !== keys.length || parts.some(([k, , v]) => optionalTags[k] !== v)) return null;
+  return parts;
+}
+
+function tagCell(keys, suffix = "") {
+  if (keys.length === 0) return el("td", { text: "タグにしない" });
+  const td = el("td");
+  keys.forEach((k, i) => {
+    if (i > 0) td.append("、");
+    td.append(el("code", { text: k }));
+  });
+  if (suffix) td.append(suffix);
+  return td;
+}
+
+function renderStructure(data, primary) {
+  if (!data.segments?.length) { clearStructure(); return; }
+  const tags = primary?.tags ?? {};
+  const optionalTags = primary?.optionalTags ?? {};
+  const rows = [];
+  for (const s of data.segments) {
+    if (PLACE[s.role]) {
+      const [role, key] = PLACE[s.role];
+      rows.push([s.value, role, tagCell(s.tagged && key in tags ? [key] : [])]);
+    } else if (s.role === "number_undecided") {
+      const keys = ["addr:block_number", "addr:housenumber"].filter((k) => k in tags);
+      if (primary?.guessed && keys.length > 0) rows.push([s.value, "番地（推測）", tagCell(keys)]);
+      else rows.push([s.value, "番地（住居表示か地番か未定）", tagCell([])]);
+    } else if (s.role === "chiban") {
+      rows.push([s.value, "地番", tagCell([])]);
+    } else if (s.role === "extra_number") {
+      rows.push([s.value, "番地の続き", tagCell([])]);
+    } else if (s.role === "remainder") {
+      const keys = OPTIONAL_KEYS.filter((k) => optionalTags[k] !== undefined);
+      const parts = keys.length > 0 ? splitRemainder(s.value, optionalTags) : null;
+      if (parts) {
+        for (const [k, text] of parts) rows.push([text, `${OPTIONAL_ROLE[k]}（推測）`, tagCell([k], "（候補）")]);
+      } else if (keys.length > 0) {
+        rows.push([s.value, "建物名など（推測）", tagCell(keys, "（候補）")]);
+      } else {
+        rows.push([s.value, "建物名など", tagCell([])]);
+      }
+    } else {
+      rows.push([s.value, s.role, tagCell([])]);
+    }
+  }
+  const table = el("table", {}, [
+    el("thead", {}, el("tr", {}, ["区切り", "役割", "タグ"].map((t) => el("th", { scope: "col", text: t })))),
+    el("tbody", {}, rows.map(([value, role, cell]) => el("tr", {}, [el("td", { text: value }), el("td", { text: role }), cell]))),
+  ]);
+  structureBody.replaceChildren(table);
+  structure.hidden = false;
+}
+
+let controller = null;
+
+async function request() {
+  const address = input.value.trim();
+  if (controller) controller.abort();
+  if (!address) {
+    clearStructure();
+    root.replaceChildren(el("div", { class: "empty", text: "住所を入力すると、ここにタグが出ます。" }));
+    return;
+  }
+  controller = new AbortController();
+  const { signal } = controller;
+  try {
+    const res = await fetch("/api/v1/parse", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ address }),
+      signal,
+    });
+    // プロキシの502などは本文がJSONでないので、読めなくても接続の失敗とは分けて伝える
+    const data = await res.json().catch(() => null);
+    if (signal.aborted) return;
+    if (!res.ok || !data) {
+      showMessage(data?.error?.message ?? "うまくいきませんでした。しばらくしてからもう一度お試しください。");
+      return;
+    }
+    renderResult(data);
+  } catch (e) {
+    if (e?.name === "AbortError" || signal.aborted) return;
+    showMessage("サーバに接続できませんでした。しばらくしてからもう一度お試しください。");
+  }
+}
+
+input.addEventListener("paste", () => { setTimeout(request, 0); });
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); request(); }
+});
+document.getElementById("go").addEventListener("click", request);
+for (const b of document.querySelectorAll(".ex")) {
+  b.addEventListener("click", () => { input.value = b.dataset.addr; request(); });
+}
+request();
+</script>
+</body>
+</html>

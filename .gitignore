@@ -1,0 +1,10 @@
+docs/handoff/
+.claude/launch.json
+node_modules/
+docs/license-1.pdf
+.superpowers/
+
+# 公開しない作業の記録とモック
+docs/superpowers/
+docs/license-check-2026-10.md
+mock/

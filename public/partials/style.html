@@ -1,0 +1,52 @@
+<style>
+/* どのページにも共通の配色、本文、ヘッダ、フッタ、リンク。ページ固有のものは各ページに書く */
+:root {
+  --bg: #f3f5f4; --surface: #ffffff; --fg: #1d2724; --muted: #5b6863; --line: #d5dcd9;
+  --accent: #23665a; --accent-fg: #ffffff; --accent-soft: #e3efec;
+  --font-ui: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+  --font-tag: "BIZ UDGothic", "Osaka-Mono", "MS Gothic", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141a18; --surface: #1c2421; --fg: #e3ebe8; --muted: #9aa9a3; --line: #33403b;
+    --accent: #6cc2b0; --accent-fg: #0f1513; --accent-soft: #1f2e2a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141a18; --surface: #1c2421; --fg: #e3ebe8; --muted: #9aa9a3; --line: #33403b;
+  --accent: #6cc2b0; --accent-fg: #0f1513; --accent-soft: #1f2e2a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 15px; line-height: 1.7;
+}
+a { color: var(--accent); }
+.wrap, .site-inner {
+  width: 100%; max-width: 880px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { flex: 1; padding-block: 24px 48px; display: grid; gap: 22px; align-content: start; }
+.site-header { background: var(--accent); color: var(--accent-fg); }
+.site-header .site-inner {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 4px 20px; padding-block: 12px;
+}
+.site-header a { color: inherit; }
+.site-name { font-size: 1.1rem; font-weight: 700; text-decoration: none; }
+.site-header nav { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.site-header a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.site-footer { background: var(--accent-soft); font-size: 0.82rem; }
+.site-footer .site-inner { display: grid; gap: 4px; padding-block: 16px 24px; }
+.site-footer p { margin: 0; max-width: 70ch; overflow-wrap: anywhere; }
+/* 使い方、データと方針、APIの本文 */
+main.doc { display: block; min-width: 0; overflow-wrap: anywhere; }
+main.doc h1 { font-size: 1.6rem; margin: 0 0 12px; text-wrap: balance; }
+main.doc :is(h2, h3) { margin: 1.6em 0 0.5em; }
+main.doc pre { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+main.doc code { font-family: var(--font-tag); font-size: 0.92em; }
+main.doc table { display: block; overflow-x: auto; border-collapse: collapse; }
+main.doc :is(th, td) { border: 1px solid var(--line); padding: 4px 8px; }
+</style>
