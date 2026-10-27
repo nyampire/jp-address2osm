@@ -1,0 +1,409 @@
+openapi: 3.1.0
+info:
+  title: 住所分割API
+  version: '1'
+  summary: 日本の住所の文字列を、OSMのaddrタグに分けて返すAPI
+  description: |
+    住所の文字列から郵便番号を切り出し、都道府県から番地までを区切ります。
+    住居表示の住所か、地番の住所かを、アドレス・ベース・レジストリ（ABR）の台帳で判定します。
+    使い方の説明は https://address2osm.nyampire.info/api にあります。
+
+    同じ版の中では、項目や`role`、`result`、`kind`の値を足すことはあっても、消したり意味を変えたりしません。
+    値を足すときは、この定義も合わせて直します。
+    呼び出し側のプログラムは、知らない項目と知らない値を読み飛ばしてください。
+
+    定義に無いパスには404（`not_found`）を返します。
+    `/api/v1/parse`にPOSTとOPTIONS以外で要求すると、405（`method_not_allowed`）を、使える方法を示す`Allow`ヘッダを付けて返します。
+    どちらも本文は`ErrorResponse`の形です。
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: https://address2osm.nyampire.info
+paths:
+  /api/v1/parse:
+    post:
+      operationId: parseAddress
+      summary: 住所を1件、addrタグに分ける
+      description: |
+        要求の形が正しければ、分けられたかどうかにかかわらず200を返します。
+        町字を特定できなかった住所は、`result`を`unresolved`にして返します。
+        回数の制限は、送り元のIPアドレスごとに1分あたり60回が既定です。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParseRequest'
+            example:
+              address: 高知県高知市北本町１ー２ー６
+      responses:
+        '200':
+          description: 判定の結果
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/AccessControlAllowOrigin'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParseResponse'
+              examples:
+                jukyo:
+                  summary: 住居表示と判定された住所
+                  value:
+                    apiVersion: '1'
+                    result: jukyo
+                    message: 住居表示の住所です。住居表示の台帳に、北本町一丁目の2-6があります。
+                    segments:
+                      - { value: 高知県, role: prefecture, tagged: true }
+                      - { value: 高知市, role: city, tagged: true }
+                      - { value: 北本町一丁目, role: neighbourhood, tagged: true }
+                      - { value: '2', role: block_number, tagged: true }
+                      - { value: '6', role: housenumber, tagged: true }
+                    candidates:
+                      - kind: jukyo
+                        tags:
+                          addr:province: 高知県
+                          addr:city: 高知市
+                          addr:neighbourhood: 北本町一丁目
+                          addr:block_number: '2'
+                          addr:housenumber: '6'
+                          addr:full: 高知県高知市北本町一丁目2-6
+                chiban:
+                  summary: 地番と判定された住所
+                  value:
+                    apiVersion: '1'
+                    result: chiban
+                    message: 地番の住所です。和食甲は住居表示を実施していない町字です。番地はタグにしません。
+                    segments:
+                      - { value: 高知県, role: prefecture, tagged: true }
+                      - { value: 安芸郡, role: county, tagged: true }
+                      - { value: 芸西村, role: city, tagged: true }
+                      - { value: 和食, role: quarter, tagged: true }
+                      - { value: 甲, role: neighbourhood, tagged: true }
+                      - { value: 1513-1, role: chiban, tagged: false }
+                    candidates:
+                      - kind: chiban
+                        tags:
+                          addr:province: 高知県
+                          addr:county: 安芸郡
+                          addr:city: 芸西村
+                          addr:quarter: 和食
+                          addr:neighbourhood: 甲
+                          addr:full: 高知県安芸郡芸西村和食甲1513-1
+                        note: 地番の「1513-1」はタグにしません。
+                ambiguous:
+                  summary: 決められない住所（推測）
+                  value:
+                    apiVersion: '1'
+                    result: ambiguous
+                    message: 住居表示の住所と推測しました。ABRは中村一条通三丁目を住居表示の実施済みとしていますが、住居表示の台帳がなく、地番の台帳にも「2-23」がありません。台帳の欠けの可能性が高いため、住居表示として番地まで入れています。
+                    segments:
+                      - { value: 高知県, role: prefecture, tagged: true }
+                      - { value: 四万十市, role: city, tagged: true }
+                      - { value: 中村一条通三丁目, role: neighbourhood, tagged: true }
+                      - { value: 2-23, role: number_undecided, tagged: true }
+                    candidates:
+                      - kind: jukyo
+                        tags:
+                          addr:province: 高知県
+                          addr:city: 四万十市
+                          addr:neighbourhood: 中村一条通三丁目
+                          addr:block_number: '2'
+                          addr:housenumber: '23'
+                          addr:full: 高知県四万十市中村一条通三丁目2-23
+                        guessed: true
+                      - kind: chiban
+                        tags:
+                          addr:province: 高知県
+                          addr:city: 四万十市
+                          addr:neighbourhood: 中村一条通三丁目
+                          addr:full: 高知県四万十市中村一条通三丁目2-23
+                        note: 地番の「2-23」はタグにしません。
+                remainder:
+                  summary: 建物名、階、部屋番号のある住所
+                  value:
+                    apiVersion: '1'
+                    result: jukyo
+                    message: 住居表示の住所です。住居表示の台帳に、北本町一丁目の2-6があります。
+                    segments:
+                      - { value: 高知県, role: prefecture, tagged: true }
+                      - { value: 高知市, role: city, tagged: true }
+                      - { value: 北本町一丁目, role: neighbourhood, tagged: true }
+                      - { value: '2', role: block_number, tagged: true }
+                      - { value: '6', role: housenumber, tagged: true }
+                      - { value: 中村ビル3階 301号室, role: remainder, tagged: false }
+                    candidates:
+                      - kind: jukyo
+                        tags:
+                          addr:province: 高知県
+                          addr:city: 高知市
+                          addr:neighbourhood: 北本町一丁目
+                          addr:block_number: '2'
+                          addr:housenumber: '6'
+                          addr:full: 高知県高知市北本町一丁目2-6 中村ビル3階 301号室
+                        optionalTags:
+                          addr:housename: 中村ビル
+                          addr:unit: '301'
+                          addr:floor: '3'
+                unresolved:
+                  summary: 分けられない住所
+                  value:
+                    apiVersion: '1'
+                    result: unresolved
+                    message: 町字を特定できず、住所を分けられませんでした。この住所は改善のために記録します。
+                    segments:
+                      - { value: 存在しない県の何か, role: remainder, tagged: false }
+                    candidates: []
+        '400':
+          description: JSONとして読めない、`address`が無い、空、文字列でない
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/AccessControlAllowOrigin'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: { code: bad_request, message: 住所を文字列で指定してください。 }
+        '413':
+          description: '`address`が200文字を超える、または本文が8KBを超える'
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/AccessControlAllowOrigin'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: { code: too_long, message: 住所は200文字以内にしてください。 }
+        '429':
+          description: 回数の制限を超えた
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/AccessControlAllowOrigin'
+            Retry-After:
+              description: 次に送れるまでの秒数
+              required: true
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: { code: rate_limited, message: リクエストが多すぎます。しばらく待ってから試してください。 }
+        '500':
+          $ref: '#/components/responses/Internal'
+    options:
+      operationId: parseAddressPreflight
+      summary: CORSの事前確認
+      responses:
+        '204':
+          description: POSTを受け付けることを示す
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/AccessControlAllowOrigin'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                const: POST, OPTIONS
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                const: Content-Type
+  /api/openapi.yaml:
+    get:
+      operationId: getOpenApi
+      summary: このAPIの定義（この文書）
+      responses:
+        '200':
+          description: OpenAPI 3.1の定義
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/AccessControlAllowOrigin'
+          content:
+            application/yaml:
+              schema:
+                type: string
+components:
+  headers:
+    AccessControlAllowOrigin:
+      description: CORSを許可する。ブラウザで動くツールから直接呼べる
+      schema:
+        type: string
+        const: '*'
+  responses:
+    Internal:
+      description: サーバ内部の失敗
+      headers:
+        Access-Control-Allow-Origin:
+          $ref: '#/components/headers/AccessControlAllowOrigin'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: { code: internal, message: サーバ内部でエラーが起きました。 }
+  schemas:
+    ParseRequest:
+      type: object
+      required: [address]
+      properties:
+        address:
+          type: string
+          description: |
+            分ける住所。全角と半角のどちらでも指定できます。
+            空白だけの文字列は400になります。本文全体は8KBまでです。
+          minLength: 1
+          maxLength: 200
+    ParseResponse:
+      type: object
+      required: [apiVersion, result, message, segments, candidates]
+      properties:
+        apiVersion:
+          type: string
+          const: '1'
+          description: APIの版
+        result:
+          $ref: '#/components/schemas/ResultKind'
+        message:
+          type: string
+          description: |
+            判定の説明文（日本語）。人に見せるためのものです。
+            プログラムは`message`の文面で分岐せず、`result`と`role`で分岐してください。
+        segments:
+          type: array
+          description: 読み取った区切りの並び。入力の順に並びます。
+          items:
+            $ref: '#/components/schemas/Segment'
+        candidates:
+          type: array
+          description: 候補の並び。0から2つです。
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/Candidate'
+    ResultKind:
+      type: string
+      description: |
+        判定の種類。
+        - `jukyo`: 住居表示の住所。候補は`jukyo`の1つ。番地を読み取れなかったときは町字までのタグだけを返します。
+        - `chiban`: 地番の住所。候補は`chiban`の1つ。
+        - `ambiguous`: 住居表示か地番かを決められない、または住居表示と推測した。候補は`jukyo`、`chiban`の順に2つか、町字までの`town`の1つ。
+        - `unresolved`: 町字を特定できず、分けられなかった。候補は空。
+      enum: [jukyo, chiban, ambiguous, unresolved]
+    Segment:
+      type: object
+      required: [value, role, tagged]
+      properties:
+        value:
+          type: string
+          description: 区切りの文字列
+        role:
+          $ref: '#/components/schemas/SegmentRole'
+        tagged:
+          type: boolean
+          description: その区切りが、どれかの候補のタグになったかどうか
+    SegmentRole:
+      type: string
+      description: |
+        区切りの役割。OSMのタグのキーに対応するものは、キーから`addr:`を除いた名前です。
+        - `postcode`: 郵便番号（`addr:postcode`）
+        - `prefecture`: 都道府県（`addr:province`）
+        - `county`: 郡（`addr:county`）
+        - `city`: 市区町村（`addr:city`）
+        - `ward`: 政令指定都市の区（`addr:suburb`）
+        - `quarter`: 大字（`addr:quarter`）
+        - `neighbourhood`: 町字、字（`addr:neighbourhood`）
+        - `block_number`: 街区符号（`addr:block_number`）
+        - `housenumber`: 住居番号（`addr:housenumber`）
+        - `number_undecided`: 住居表示の街区符号と住居番号か、地番か、決められない番地（候補によって異なる）
+        - `chiban`: 地番（タグにしません）
+        - `extra_number`: 番地の3つ目以降の要素（タグにしません）
+        - `remainder`: 建物名や階数などの残り（タグにしません）
+      enum:
+        - postcode
+        - prefecture
+        - county
+        - city
+        - ward
+        - quarter
+        - neighbourhood
+        - block_number
+        - housenumber
+        - number_undecided
+        - chiban
+        - extra_number
+        - remainder
+    Candidate:
+      type: object
+      required: [kind, tags]
+      properties:
+        kind:
+          $ref: '#/components/schemas/CandidateKind'
+        tags:
+          $ref: '#/components/schemas/Tags'
+        guessed:
+          type: boolean
+          const: true
+          description: 住居表示と推測した候補のとき、真。推測でなければ項目ごと省きます。
+        optionalTags:
+          $ref: '#/components/schemas/OptionalTags'
+        note:
+          type: string
+          description: 人に見せる注記（日本語）。無いときは項目ごと省きます。
+    CandidateKind:
+      type: string
+      description: |
+        候補の種類。
+        - `jukyo`: 住居表示の候補。番地まで含みます。
+        - `chiban`: 地番の候補。番地は含まず、町字までで止めます。
+        - `town`: 住居表示か地番かを決める材料が無く、町字までで止めた候補。
+      enum: [jukyo, chiban, town]
+    Tags:
+      type: object
+      description: |
+        OSMのタグのキーと値の組。キーは`addr:postcode`、`addr:province`から`addr:housenumber`までの順に並び、最後が`addr:full`です。
+        `addr:full`は貼った住所を正規化した文字列で、郵便番号を除き、番地の後ろの建物名などは残します。どの候補にも同じ値が入ります。
+        `addr:country`、`note`、`fixme`、`name`は入れません。
+      required: ['addr:full']
+      properties:
+        addr:postcode: { type: string }
+        addr:province: { type: string }
+        addr:county: { type: string }
+        addr:city: { type: string }
+        addr:suburb: { type: string }
+        addr:quarter: { type: string }
+        addr:neighbourhood: { type: string }
+        addr:block_number: { type: string }
+        addr:housenumber: { type: string }
+        addr:full: { type: string }
+      additionalProperties:
+        type: string
+    OptionalTags:
+      type: object
+      description: |
+        番地の後ろの文字列から推測した、建物名、階、部屋番号の候補。推測できたものだけが入り、無いときは項目ごと省きます。
+        `tags`に足すかどうかは呼び出し側が決めます。推測の精度は高くないので、利用者が選んでから使ってください。
+      properties:
+        addr:housename: { type: string }
+        addr:floor: { type: string }
+        addr:unit: { type: string }
+      additionalProperties:
+        type: string
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: プログラムはこの値で分岐してください。
+              enum: [bad_request, too_long, rate_limited, not_found, method_not_allowed, internal]
+            message:
+              type: string
+              description: 人に見せるための日本語。文面は変わることがあります。

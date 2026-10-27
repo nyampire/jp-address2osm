@@ -16,6 +16,7 @@ APIの使い方は`docs/api.md`に書いています。
 | `/guide` | 使い方 |
 | `/data` | データと方針（出典、利用規約、記録の方針） |
 | `/api` | APIの説明（`docs/api.md`をページにしたもの） |
+| `/api/openapi.yaml` | APIのOpenAPI 3.1の定義（`docs/openapi.yaml`） |
 
 ## 必要なもの
 

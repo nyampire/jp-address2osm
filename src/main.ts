@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createRateLimiter } from './rateLimit.ts'
 
@@ -45,6 +46,7 @@ const server = createServer({
     apiDocPath: fileURLToPath(new URL('../docs/api.md', import.meta.url)),
     dataDate: apiBase?.startsWith('file://') ? readDataDate(fileURLToPath(apiBase)) : '不明',
   }),
+  readOpenApi: () => fs.promises.readFile(fileURLToPath(new URL('../docs/openapi.yaml', import.meta.url)), 'utf8'),
   maxAddressLength: MAX_ADDRESS_LENGTH,
 })
 server.listen(port, () => {

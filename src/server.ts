@@ -4,12 +4,15 @@ import type { ParseResponse } from './types.ts'
 
 const MAX_BODY_BYTES = 8 * 1024
 const PARSE_PATH = '/api/v1/parse'
+const OPENAPI_PATH = '/api/openapi.yaml'
 
 export type ServerOptions = {
   parse: (address: string) => Promise<ParseResponse>
   limiter: ReturnType<typeof createRateLimiter>
   trustProxy: boolean
   renderPage: (path: string) => Promise<string | null>
+  // OpenAPI の定義（docs/openapi.yaml）の中身
+  readOpenApi: () => Promise<string>
   maxAddressLength: number
 }
 
@@ -109,6 +112,13 @@ export function createServer(options: ServerOptions): http.Server {
           return
         }
         return sendError(res, 405, 'method_not_allowed', 'POST で呼び出してください。', { Allow: 'POST, OPTIONS' })
+      }
+      if (req.method === 'GET' && path === OPENAPI_PATH) {
+        // 定義はツールが別のオリジンから読むので、CORS を許可する
+        const yaml = await options.readOpenApi()
+        res.writeHead(200, { 'Content-Type': 'application/yaml; charset=utf-8', 'Access-Control-Allow-Origin': '*' })
+        res.end(yaml)
+        return
       }
       if (req.method === 'GET') {
         // 要求ごとに読む。起動時に public/ が無くても動かせるようにするため

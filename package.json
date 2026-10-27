@@ -12,7 +12,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
-    "typescript": "^7.0.2"
+    "ajv": "^8.20.0",
+    "typescript": "^7.0.2",
+    "yaml": "^2.9.1"
   },
   "dependencies": {
     "marked": "^18.1.1"

@@ -19,6 +19,7 @@ async function start(opts: { limit?: number; trustProxy?: boolean; parse?: () =>
     limiter: createRateLimiter({ limit: opts.limit ?? 1000, windowMs: 60000 }),
     trustProxy: opts.trustProxy ?? false,
     renderPage,
+    readOpenApi: async () => 'openapi: 3.1.0\n',
     maxAddressLength: 200,
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
@@ -119,6 +120,7 @@ test('ページが読めなければ 500 internal', async () => {
     limiter: createRateLimiter({ limit: 10, windowMs: 1000 }),
     trustProxy: false,
     renderPage: async () => { throw new Error('/secret/path') },
+    readOpenApi: async () => '',
     maxAddressLength: 200,
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
@@ -128,6 +130,15 @@ test('ページが読めなければ 500 internal', async () => {
   const text = await res.text()
   assert.equal((JSON.parse(text) as any).error.code, 'internal')
   assert.doesNotMatch(text, /secret/)
+})
+
+test('GET /api/openapi.yaml は定義を application/yaml で返す', async () => {
+  const base = await start()
+  const res = await fetch(`${base}/api/openapi.yaml`)
+  assert.equal(res.status, 200)
+  assert.equal(res.headers.get('content-type'), 'application/yaml; charset=utf-8')
+  assert.equal(res.headers.get('access-control-allow-origin'), '*')
+  assert.equal(await res.text(), 'openapi: 3.1.0\n')
 })
 
 test('GET /guide は 200 の text/html', async () => {
