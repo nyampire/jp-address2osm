@@ -9,6 +9,10 @@ const PAGE_FILES: Record<string, string> = {
   '/api': 'api.html',
 }
 
+export function isPagePath(urlPath: string): boolean {
+  return Object.hasOwn(PAGE_FILES, urlPath)
+}
+
 // 住所データの索引（<base>.json）の meta.updated（UNIX 秒）を日本時間の日付にする
 export function readDataDate(apiBasePath: string): string {
   try {
@@ -38,7 +42,7 @@ export function createPageRenderer(options: PageRendererOptions): (path: string)
   const partial = (name: string) => read(path.join(options.publicDir, 'partials', name))
 
   return async (urlPath) => {
-    const file = Object.hasOwn(PAGE_FILES, urlPath) ? PAGE_FILES[urlPath] : undefined
+    const file = isPagePath(urlPath) ? PAGE_FILES[urlPath] : undefined
     if (!file) return null
     let html = await read(path.join(options.publicDir, file))
     // 置換文字列に $ が含まれても解釈されないよう、関数で返す

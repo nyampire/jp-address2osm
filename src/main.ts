@@ -24,7 +24,7 @@ try {
 }
 const { createParsePool } = await import('./parsePool.ts')
 const { createServer } = await import('./server.ts')
-const { createPageRenderer, readDataDate } = await import('./pages.ts')
+const { createPageRenderer, isPagePath, readDataDate } = await import('./pages.ts')
 
 const heapLimit = Number(process.env.WORKER_HEAP_LIMIT_MB ?? HEAP_LIMIT_MB)
 const pool = createParsePool({
@@ -46,6 +46,7 @@ const server = createServer({
     apiDocPath: fileURLToPath(new URL('../docs/api.md', import.meta.url)),
     dataDate: apiBase?.startsWith('file://') ? readDataDate(fileURLToPath(apiBase)) : '不明',
   }),
+  isPage: isPagePath,
   readOpenApi: () => fs.promises.readFile(fileURLToPath(new URL('../docs/openapi.yaml', import.meta.url)), 'utf8'),
   maxAddressLength: MAX_ADDRESS_LENGTH,
 })

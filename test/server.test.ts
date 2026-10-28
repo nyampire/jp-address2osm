@@ -19,6 +19,7 @@ async function start(opts: { limit?: number; trustProxy?: boolean; parse?: () =>
     limiter: createRateLimiter({ limit: opts.limit ?? 1000, windowMs: 60000 }),
     trustProxy: opts.trustProxy ?? false,
     renderPage,
+    isPage: (path) => path === '/' || path === '/guide',
     readOpenApi: async () => 'openapi: 3.1.0\n',
     maxAddressLength: 200,
   })
@@ -120,6 +121,7 @@ test('ページが読めなければ 500 internal', async () => {
     limiter: createRateLimiter({ limit: 10, windowMs: 1000 }),
     trustProxy: false,
     renderPage: async () => { throw new Error('/secret/path') },
+    isPage: () => true,
     readOpenApi: async () => '',
     maxAddressLength: 200,
   })
@@ -147,6 +149,35 @@ test('GET /guide は 200 の text/html', async () => {
   assert.equal(res.status, 200)
   assert.equal(res.headers.get('content-type'), 'text/html; charset=utf-8')
   assert.match(await res.text(), /<title>\/guide<\/title>/)
+})
+
+test('GET /guide/ は 301 で /guide へ転送する', async () => {
+  const base = await start()
+  const res = await fetch(`${base}/guide/`, { redirect: 'manual' })
+  assert.equal(res.status, 301)
+  assert.equal(res.headers.get('location'), '/guide')
+})
+
+test('転送先にクエリ文字列を残す', async () => {
+  const base = await start()
+  const res = await fetch(`${base}/guide/?q=1&r=2`, { redirect: 'manual' })
+  assert.equal(res.status, 301)
+  assert.equal(res.headers.get('location'), '/guide?q=1&r=2')
+})
+
+test('ページでないパスは末尾に / があっても 404 のまま', async () => {
+  const base = await start()
+  for (const path of ['/nope/', '/guide//', '/api/openapi.yaml/', '/api/v1/parse/']) {
+    const res = await fetch(`${base}${path}`, { redirect: 'manual' })
+    assert.equal(res.status, 404, path)
+  }
+})
+
+test('//evil.example/ は別のホストへ転送しない', async () => {
+  const base = await start()
+  const res = await fetch(`${base}//evil.example/`, { redirect: 'manual' })
+  assert.equal(res.status, 404)
+  assert.equal(res.headers.get('location'), null)
 })
 
 test('そのほかは 404 not_found', async () => {

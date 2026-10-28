@@ -11,6 +11,8 @@ export type ServerOptions = {
   limiter: ReturnType<typeof createRateLimiter>
   trustProxy: boolean
   renderPage: (path: string) => Promise<string | null>
+  // renderPage が返すページのパスか。末尾に / を付けたパスの転送に使う
+  isPage: (path: string) => boolean
   // OpenAPI の定義（docs/openapi.yaml）の中身
   readOpenApi: () => Promise<string>
   maxAddressLength: number
@@ -118,6 +120,13 @@ export function createServer(options: ServerOptions): http.Server {
         const yaml = await options.readOpenApi()
         res.writeHead(200, { 'Content-Type': 'application/yaml; charset=utf-8', 'Access-Control-Allow-Origin': '*' })
         res.end(yaml)
+        return
+      }
+      if (req.method === 'GET' && path.length > 1 && path.endsWith('/') && options.isPage(path.slice(0, -1))) {
+        // 転送先はページの表にあるパスに限るので、別のホスト（//evil.example など）へは向かない
+        const query = (req.url ?? '').slice(path.length)
+        res.writeHead(301, { Location: path.slice(0, -1) + query })
+        res.end()
         return
       }
       if (req.method === 'GET') {

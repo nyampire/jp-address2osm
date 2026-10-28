@@ -112,6 +112,7 @@ test('サーバが返す誤りの本文は ErrorResponse に合う', async () =>
     limiter: createRateLimiter({ limit: 4, windowMs: 60000 }),
     trustProxy: false,
     renderPage: async () => null,
+    isPage: () => false,
     readOpenApi: async () => specText,
     maxAddressLength: 200,
   })
