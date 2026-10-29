@@ -2,10 +2,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildResponse } from '../src/response.ts'
 import type { ConversionResult } from '../vendor/nja-osm-tags/src/index.ts'
+import type { Segment } from '../src/types.ts'
 
 const town = { 'addr:country': 'JP', 'addr:province': '高知県', 'addr:city': '四万十市', 'addr:neighbourhood': '中村一条通三丁目' }
 const withNumber = { ...town, 'addr:block_number': '2', 'addr:housenumber': '23' }
 const TOWN_KEYS = ['addr:province', 'addr:city', 'addr:neighbourhood']
+// 区切りの役割と値だけを比べる。根拠（basis）は末尾のテストで確かめる
+const bare = (segments: Segment[]) => segments.map(({ basis: _basis, ...s }) => s)
 
 test('判定不能は住居表示と地番の2候補を、この順で返す', () => {
   const r = buildResponse({ conversion: { tags: withNumber, numberSource: 'inferred', extra: {} },
@@ -14,7 +17,7 @@ test('判定不能は住居表示と地番の2候補を、この順で返す', (
   assert.deepEqual(r.candidates.map((c) => c.kind), ['jukyo', 'chiban'])
   assert.deepEqual(Object.keys(r.candidates[1]!.tags), [...TOWN_KEYS, 'addr:full'])
   assert.equal(r.candidates[1]!.note, '地番の「2-23」はタグにしません。')
-  assert.deepEqual(r.segments.at(-1), { value: '2-23', role: 'number_undecided', tagged: true })
+  assert.deepEqual(bare(r.segments).at(-1), { value: '2-23', role: 'number_undecided', tagged: true })
   assert.equal(r.message, '住居表示の住所と推測しました。ABRは中村一条通三丁目を住居表示の実施済みとしていますが、住居表示の台帳がなく、地番の台帳にも「2-23」がありません。台帳の欠けの可能性が高いため、住居表示として番地まで入れています。')
 })
 
@@ -35,7 +38,7 @@ test('verified は住居表示の1候補', () => {
 
 test('verified では other が空でも番地の区切りをタグから作る', () => {
   const r = buildResponse({ conversion: { tags: withNumber, numberSource: 'verified', extra: {} }, other: '', judgement: '' })
-  assert.deepEqual(r.segments.slice(-2), [
+  assert.deepEqual(bare(r.segments).slice(-2), [
     { value: '2', role: 'block_number', tagged: true },
     { value: '23', role: 'housenumber', tagged: true },
   ])
@@ -53,7 +56,7 @@ test('inferred で地番なら地番の1候補', () => {
   assert.equal(r.result, 'chiban')
   assert.deepEqual(r.candidates.map((c) => c.kind), ['chiban'])
   assert.equal(r.message, '地番の住所と判定しました。中村一条通三丁目の2-23は、住居表示の台帳に無く、地番の台帳にあります。番地はタグにしません。')
-  assert.deepEqual(r.segments.at(-1), { value: '2-23', role: 'chiban', tagged: false })
+  assert.deepEqual(bare(r.segments).at(-1), { value: '2-23', role: 'chiban', tagged: false })
 })
 
 test('rsdt-detail-missing は町字までの住居表示', () => {
@@ -63,7 +66,7 @@ test('rsdt-detail-missing は町字までの住居表示', () => {
   assert.deepEqual(r.candidates.map((c) => c.kind), ['jukyo'])
   assert.deepEqual(Object.keys(r.candidates[0]!.tags), [...TOWN_KEYS, 'addr:full'])
   assert.equal(r.message, '住居表示の住所ですが、番地を読み取れませんでした。番地はタグにしません。')
-  assert.deepEqual(r.segments.at(-1), { value: 'ビル', role: 'remainder', tagged: false })
+  assert.deepEqual(bare(r.segments).at(-1), { value: 'ビル', role: 'remainder', tagged: false })
 })
 
 test('chiban は地番の1候補で、番地の区切りの役割は chiban', () => {
@@ -72,7 +75,7 @@ test('chiban は地番の1候補で、番地の区切りの役割は chiban', ()
   assert.equal(r.result, 'chiban')
   assert.deepEqual(r.candidates.map((c) => c.kind), ['chiban'])
   assert.equal(r.message, '地番の住所です。地番の台帳に、中村一条通三丁目の12-3があります。番地はタグにしません。')
-  assert.deepEqual(r.segments.at(-1), { value: '12-3', role: 'chiban', tagged: false })
+  assert.deepEqual(bare(r.segments).at(-1), { value: '12-3', role: 'chiban', tagged: false })
   assert.equal(r.candidates[0]!.note, '地番の「12-3」はタグにしません。')
 })
 
@@ -99,7 +102,7 @@ test('machiaza-unresolved は候補なしで unresolved', () => {
   assert.equal(r.result, 'unresolved')
   assert.deepEqual(r.candidates, [])
   assert.equal(r.message, '町字を特定できず、住所を分けられませんでした。この住所は改善のために記録します。')
-  assert.deepEqual(r.segments, [
+  assert.deepEqual(bare(r.segments), [
     { value: '高知県', role: 'prefecture', tagged: false },
     { value: '不明町1-2', role: 'remainder', tagged: false },
   ])
@@ -154,7 +157,7 @@ test('区は ward、大字は quarter の区切りになり、順序は住所の
 test('1-2-6-301 ビル3F は extra_number と remainder に分かれる', () => {
   const r = buildResponse({ conversion: { tags: { ...town, 'addr:block_number': '1', 'addr:housenumber': '2' }, numberSource: 'inferred', extra: {} },
     other: '1-2-6-301 ビル3F', judgement: '' })
-  assert.deepEqual(r.segments.slice(-4), [
+  assert.deepEqual(bare(r.segments).slice(-4), [
     { value: '1', role: 'block_number', tagged: true },
     { value: '2', role: 'housenumber', tagged: true },
     { value: '6-301', role: 'extra_number', tagged: false },
@@ -166,7 +169,7 @@ test('chibanNumber があれば番地の区切りの役割は chiban', () => {
   const r = buildResponse({ conversion: { tags: town, numberSource: 'none', noNumberReason: 'chiban', extra: {} },
     other: 'ビル', chibanNumber: '7', judgement: '' })
   assert.equal(r.segments.find((s) => s.role === 'chiban')?.value, '7')
-  assert.deepEqual(r.segments.at(-1), { value: 'ビル', role: 'remainder', tagged: false })
+  assert.deepEqual(bare(r.segments).at(-1), { value: 'ビル', role: 'remainder', tagged: false })
 })
 
 // addr:full、推測、建物名などの候補
@@ -269,7 +272,7 @@ const tsuruga: ConversionResult = {
 
 test('台帳に無い字名の後ろの数字は地番になり、字名はタグにしない区切りになる', () => {
   const r = buildResponse({ conversion: notImplemented, other: '字大多志243-19', townOther: '字大多志243-19', judgement: '' })
-  assert.deepEqual(r.segments.slice(-2), [
+  assert.deepEqual(bare(r.segments).slice(-2), [
     { value: '字大多志', role: 'unlisted_place', tagged: false },
     { value: '243-19', role: 'chiban', tagged: false },
   ])
@@ -280,7 +283,7 @@ test('台帳に無い字名の後ろの数字は地番になり、字名はタ�
 
 test('敦賀市津内109号南国広1-1 の南国広は建物名にならない', () => {
   const r = buildResponse({ conversion: tsuruga, other: '南国広1-1', townOther: '南国広1-1', judgement: '' })
-  assert.deepEqual(r.segments.slice(-3), [
+  assert.deepEqual(bare(r.segments).slice(-3), [
     { value: '109号', role: 'neighbourhood', tagged: true },
     { value: '南国広', role: 'unlisted_place', tagged: false },
     { value: '1-1', role: 'chiban', tagged: false },
@@ -291,14 +294,14 @@ test('敦賀市津内109号南国広1-1 の南国広は建物名にならない'
 
 test('地番の冠称は地番に含め、地名の区切りにしない', () => {
   const r = buildResponse({ conversion: notImplemented, other: '甲1100-4', judgement: '' })
-  assert.deepEqual(r.segments.at(-1), { value: '甲1100-4', role: 'chiban', tagged: false })
+  assert.deepEqual(bare(r.segments).at(-1), { value: '甲1100-4', role: 'chiban', tagged: false })
   assert.equal(r.segments.some((s) => s.role === 'unlisted_place'), false)
   assert.equal('optionalTags' in r.candidates[0]!, false)
 })
 
 test('字名の後ろの冠称も地番に含める', () => {
   const r = buildResponse({ conversion: notImplemented, other: '字大道下甲401-2', judgement: '' })
-  assert.deepEqual(r.segments.slice(-2), [
+  assert.deepEqual(bare(r.segments).slice(-2), [
     { value: '字大道下', role: 'unlisted_place', tagged: false },
     { value: '甲401-2', role: 'chiban', tagged: false },
   ])
@@ -307,7 +310,7 @@ test('字名の後ろの冠称も地番に含める', () => {
 test('字名と地番の後ろの建物名と階は、これまでどおり optionalTags になる', () => {
   const r = buildResponse({ conversion: notImplemented, other: '字新田193-1 大里メディカルプラザ2階', judgement: '' })
   assert.deepEqual(r.candidates[0]!.optionalTags, { 'addr:housename': '大里メディカルプラザ', 'addr:floor': '2' })
-  assert.deepEqual(r.segments.slice(-3).map((s) => s.role), ['unlisted_place', 'chiban', 'remainder'])
+  assert.deepEqual(bare(r.segments).slice(-3).map((s) => s.role), ['unlisted_place', 'chiban', 'remainder'])
 })
 
 test('建物名、残った丁目、町字の誤照合の残りは、地名と地番に分けない', () => {
@@ -328,7 +331,7 @@ test('地番の住所でなければ、字名と数字に分けない', () => {
 test('地番の台帳と照合した住所では、番地の後ろの建物名を地名と地番に分けない', () => {
   const r = buildResponse({ conversion: chibanConv, other: '髙橋第6ビル1階', townOther: '173 髙橋第6ビル1階', chibanNumber: '173', judgement: '' })
   assert.equal(r.segments.some((s) => s.role === 'unlisted_place'), false)
-  assert.deepEqual(r.segments.slice(-2), [
+  assert.deepEqual(bare(r.segments).slice(-2), [
     { value: '173', role: 'chiban', tagged: false },
     { value: '髙橋第6ビル1階', role: 'remainder', tagged: false },
   ])
@@ -348,8 +351,61 @@ test('数字の途中で地番を切らない', () => {
 
 test('「ケ」を含む通称も地名として切り出す', () => {
   const r = buildResponse({ conversion: tsuruga, other: '岩ケ鼻1-11', judgement: '' })
-  assert.deepEqual(r.segments.slice(-2), [
+  assert.deepEqual(bare(r.segments).slice(-2), [
     { value: '岩ケ鼻', role: 'unlisted_place', tagged: false },
     { value: '1-11', role: 'chiban', tagged: false },
   ])
+})
+
+// 推測した区切りとタグにしない区切りの根拠（basis）
+const basisOf = (r: ReturnType<typeof buildResponse>, role: string) => r.segments.find((s) => s.role === role)?.basis
+
+test('台帳と照合した区切りには根拠を付けない', () => {
+  const r = buildResponse({ conversion: { tags: withNumber, numberSource: 'verified', extra: {} }, other: '', judgement: '' })
+  assert.equal(r.segments.some((s) => 'basis' in s), false)
+})
+
+test('台帳に無い字名や通称と、住居表示を実施していない町字の地番に根拠を付ける', () => {
+  const r = buildResponse({ conversion: tsuruga, other: '南国広1-1', townOther: '南国広1-1', judgement: '' })
+  assert.equal(basisOf(r, 'unlisted_place'), '町字「津内109号」と番地の間にあり、アドレス・ベース・レジストリの町字にありません。')
+  assert.equal(basisOf(r, 'chiban'), '津内109号は住居表示を実施していない町字なので、番地は地番です。')
+  assert.equal(basisOf(r, 'neighbourhood'), undefined)
+})
+
+test('地番の台帳と照合した地番と、地番と判定した番地に根拠を付ける', () => {
+  const ledger = buildResponse({ conversion: chibanConv, other: '', chibanNumber: '12-3', judgement: '' })
+  assert.equal(basisOf(ledger, 'chiban'), '地番の台帳に、中村一条通三丁目の12-3があります。')
+  const judged = buildResponse({ conversion: inferred('中村一条通三丁目', '2', '23'), other: '2-23', judgement: '地番' })
+  assert.equal(basisOf(judged, 'chiban'), '住居表示の台帳に無く、地番の台帳にあります。')
+})
+
+test('推測した番地に、推測の根拠を付ける', () => {
+  const missing = buildResponse({ conversion: inferred('中村一条通三丁目', '2', '23'), other: '2-23', judgement: '判定不能' })
+  assert.equal(basisOf(missing, 'number_undecided'), '中村一条通三丁目は住居表示の実施済みですが、住居表示の台帳がなく、地番の台帳にもこの番地がありません。台帳の欠けとみて、住居表示と推測しました。')
+  const absent = buildResponse({ conversion: inferred('中村一条通三丁目', '2', '23'), other: '2-23', judgement: '不一致' })
+  assert.equal(basisOf(absent, 'number_undecided'), '中村一条通三丁目は住居表示の実施済みですが、住居表示の台帳にも地番の台帳にもこの番地がありません。台帳の欠けとみて、住居表示と推測しました。')
+})
+
+test('位置参照情報で補った町字の番地に、決められない根拠を付ける', () => {
+  const r = buildResponse({ conversion: { tags: town, numberSource: 'none', noNumberReason: 'machiaza-from-mlit', extra: {} },
+    other: '5', judgement: '' })
+  assert.equal(basisOf(r, 'number_undecided'), '中村一条通三丁目は位置参照情報で補った町字で、住居表示か地番かを決める台帳がありません。')
+})
+
+test('番地の続きに、タグにしない根拠を付ける', () => {
+  const r = buildResponse({ conversion: { tags: { ...town, 'addr:block_number': '1', 'addr:housenumber': '2' }, numberSource: 'inferred', extra: {} },
+    other: '1-2-6-301 ビル3F', judgement: '' })
+  assert.equal(basisOf(r, 'extra_number'), '番地の3つ目以降の要素で、当てはまるタグがありません。')
+})
+
+test('建物名などの残りに、推測した候補を根拠として付ける', () => {
+  const r = buildResponse({ conversion: inferred('中村一条通三丁目', '2', '23'), other: '2-23 中村ビル3F 301号室',
+    townOther: '2-23 中村ビル3F 301号室', judgement: '' })
+  assert.equal(basisOf(r, 'remainder'), '建物名「中村ビル」、階「3」、部屋番号「301」は、番地の後ろの文字列から推測した候補です。')
+})
+
+test('町字を特定できなかった住所の残りに、分けなかった根拠を付ける', () => {
+  const r = buildResponse({ conversion: { tags: { 'addr:province': '高知県' }, numberSource: 'none', noNumberReason: 'machiaza-unresolved', extra: {} },
+    other: '不明町1-2', judgement: '' })
+  assert.equal(basisOf(r, 'remainder'), '町字を特定できなかったため、残りを分けていません。')
 })

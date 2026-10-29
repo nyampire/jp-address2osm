@@ -144,7 +144,8 @@ curl -s -X POST http://localhost:8787/api/v1/parse \
     {
       "value": "1513-1",
       "role": "chiban",
-      "tagged": false
+      "tagged": false,
+      "basis": "和食甲は住居表示を実施していない町字なので、番地は地番です。"
     }
   ],
   "candidates": [
@@ -204,7 +205,8 @@ curl -s -X POST http://localhost:8787/api/v1/parse \
     {
       "value": "2-23",
       "role": "number_undecided",
-      "tagged": true
+      "tagged": true,
+      "basis": "中村一条通三丁目は住居表示の実施済みですが、住居表示の台帳がなく、地番の台帳にもこの番地がありません。台帳の欠けとみて、住居表示と推測しました。"
     }
   ],
   "candidates": [
@@ -280,7 +282,8 @@ curl -s -X POST http://localhost:8787/api/v1/parse \
     {
       "value": "中村ビル3階 301号室",
       "role": "remainder",
-      "tagged": false
+      "tagged": false,
+      "basis": "建物名「中村ビル」、階「3」、部屋番号「301」は、番地の後ろの文字列から推測した候補です。"
     }
   ],
   "candidates": [
@@ -324,7 +327,8 @@ curl -s -X POST http://localhost:8787/api/v1/parse \
     {
       "value": "存在しない県の何か",
       "role": "remainder",
-      "tagged": false
+      "tagged": false,
+      "basis": "町字を特定できなかったため、残りを分けていません。"
     }
   ],
   "candidates": []
@@ -362,6 +366,7 @@ curl -s -X POST http://localhost:8787/api/v1/parse \
 | `value` | 区切りの文字列。 |
 | `role` | 区切りの役割を表す英字の識別子。値は後の表のとおりです。 |
 | `tagged` | その区切りが、どれかの候補のタグになったかどうか。 |
+| `basis` | 推測した区切りと、タグにしない区切りの根拠（日本語）。人に見せるためのもので、`message`と同じく文面で分岐しないでください。台帳と照合した区切りでは、項目ごと省きます。 |
 
 `role`の値は次のとおりです。
 OSMのタグのキーに対応するものは、キーから`addr:`を除いた名前です。

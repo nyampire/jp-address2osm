@@ -32,7 +32,9 @@ export type BuildArgs = {
   judgement: NumberJudgement
 }
 
-type Plan = { result: ResultKind; kinds: CandidateKind[]; message: string; numberRole: SegmentRole; numberTagged: boolean; guessed?: true }
+type Plan = { result: ResultKind; kinds: CandidateKind[]; message: string; numberRole: SegmentRole; numberTagged: boolean; guessed?: true
+  // 番地の区切りの根拠。台帳と照合した番地には付けない
+  numberBasis?: string }
 
 export function buildResponse(args: BuildArgs): ParseResponse {
   const { postcode, conversion, other, townOther, chibanNumber, judgement } = args
@@ -85,11 +87,17 @@ export function buildResponse(args: BuildArgs): ParseResponse {
     const value = tags[key]
     if (value) segments.push({ value, role, tagged })
   }
-  if (parsed.place) segments.push({ value: parsed.place, role: 'unlisted_place', tagged: false })
+  if (parsed.place) {
+    segments.push({ value: parsed.place, role: 'unlisted_place', tagged: false,
+      basis: `町字「${town}」と番地の間にあり、アドレス・ベース・レジストリの町字にありません。` })
+  }
   segments.push(...numberSegments(conversion, plan, n, elements))
   const extra = extras.join('-')
-  if (extra) segments.push({ value: extra, role: 'extra_number', tagged: false })
-  if (rest) segments.push({ value: rest, role: 'remainder', tagged: false })
+  if (extra) segments.push({ value: extra, role: 'extra_number', tagged: false, basis: '番地の3つ目以降の要素で、当てはまるタグがありません。' })
+  if (rest) {
+    const basis = unresolved ? '町字を特定できなかったため、残りを分けていません。' : buildingBasis(building)
+    segments.push({ value: rest, role: 'remainder', tagged: false, ...(basis ? { basis } : {}) })
+  }
 
   return { apiVersion: '1', result: plan.result, message: plan.message, segments, candidates }
 }
@@ -106,16 +114,19 @@ function decide(conv: ConversionResult, judgement: NumberJudgement, town: string
       case '地番':
         return {
           result: 'chiban', kinds: ['chiban'], numberRole: 'chiban', numberTagged: false,
+          numberBasis: '住居表示の台帳に無く、地番の台帳にあります。',
           message: `地番の住所と判定しました。${town}の${n}は、住居表示の台帳に無く、地番の台帳にあります。番地はタグにしません。`,
         }
       case '判定不能':
         return {
           result: 'ambiguous', kinds: ['jukyo', 'chiban'], numberRole: 'number_undecided', numberTagged: true, guessed: true,
+          numberBasis: `${town}は住居表示の実施済みですが、住居表示の台帳がなく、地番の台帳にもこの番地がありません。${GUESSED}`,
           message: `住居表示の住所と推測しました。ABRは${town}を住居表示の実施済みとしていますが、住居表示の台帳がなく、地番の台帳にも「${n}」がありません。台帳の欠けの可能性が高いため、住居表示として番地まで入れています。`,
         }
       case '不一致':
         return {
           result: 'ambiguous', kinds: ['jukyo', 'chiban'], numberRole: 'number_undecided', numberTagged: true, guessed: true,
+          numberBasis: `${town}は住居表示の実施済みですが、住居表示の台帳にも地番の台帳にもこの番地がありません。${GUESSED}`,
           message: `住居表示の住所と推測しました。ABRは${town}を住居表示の実施済みとしていますが、住居表示の台帳にも地番の台帳にも「${n}」がありません。台帳の欠けの可能性が高いため、住居表示として番地まで入れています。`,
         }
     }
@@ -124,11 +135,13 @@ function decide(conv: ConversionResult, judgement: NumberJudgement, town: string
     case 'chiban':
       return {
         result: 'chiban', kinds: ['chiban'], numberRole: 'chiban', numberTagged: false,
+        numberBasis: `地番の台帳に、${town}の${n}があります。`,
         message: `地番の住所です。地番の台帳に、${town}の${n}があります。番地はタグにしません。`,
       }
     case 'rsdt-not-implemented':
       return {
         result: 'chiban', kinds: ['chiban'], numberRole: 'chiban', numberTagged: false,
+        numberBasis: `${town}は住居表示を実施していない町字なので、番地は地番です。`,
         message: `地番の住所です。${town}は住居表示を実施していない町字です。番地はタグにしません。`,
       }
     case 'rsdt-detail-missing':
@@ -139,6 +152,7 @@ function decide(conv: ConversionResult, judgement: NumberJudgement, town: string
     case 'machiaza-from-mlit':
       return {
         result: 'ambiguous', kinds: ['town'], numberRole: 'number_undecided', numberTagged: false,
+        numberBasis: `${town}は位置参照情報で補った町字で、住居表示か地番かを決める台帳がありません。`,
         message: `住居表示か地番かを決められません。${town}は台帳に番地の明細が無い町字です。番地はタグにしません。`,
       }
     default:
@@ -162,7 +176,18 @@ function numberSegments(conv: ConversionResult, plan: Plan, n: string, elements:
     if (house) out.push({ value: house, role: 'housenumber', tagged: true })
     return out
   }
-  return [{ value: n, role: plan.numberRole, tagged: plan.numberTagged }]
+  const s: Segment = { value: n, role: plan.numberRole, tagged: plan.numberTagged }
+  if (plan.numberBasis) s.basis = plan.numberBasis
+  return [s]
+}
+
+const GUESSED = '台帳の欠けとみて、住居表示と推測しました。'
+const BUILDING_LABELS: [string, string][] = [['addr:housename', '建物名'], ['addr:floor', '階'], ['addr:unit', '部屋番号']]
+
+// 建物名などの候補の根拠。候補が無ければ空
+function buildingBasis(building: Record<string, string>): string {
+  const parts = BUILDING_LABELS.filter(([k]) => building[k]).map(([k, label]) => `${label}「${building[k]}」`)
+  return parts.length > 0 ? `${parts.join('、')}は、番地の後ろの文字列から推測した候補です。` : ''
 }
 
 function pickTags(postcode: string | undefined, tags: OsmTags, withNumber: boolean): Record<string, string> {

@@ -81,7 +81,7 @@ paths:
                       - { value: 芸西村, role: city, tagged: true }
                       - { value: 和食, role: quarter, tagged: true }
                       - { value: 甲, role: neighbourhood, tagged: true }
-                      - { value: 1513-1, role: chiban, tagged: false }
+                      - { value: 1513-1, role: chiban, tagged: false, basis: 和食甲は住居表示を実施していない町字なので、番地は地番です。 }
                     candidates:
                       - kind: chiban
                         tags:
@@ -102,7 +102,7 @@ paths:
                       - { value: 高知県, role: prefecture, tagged: true }
                       - { value: 四万十市, role: city, tagged: true }
                       - { value: 中村一条通三丁目, role: neighbourhood, tagged: true }
-                      - { value: 2-23, role: number_undecided, tagged: true }
+                      - { value: 2-23, role: number_undecided, tagged: true, basis: 中村一条通三丁目は住居表示の実施済みですが、住居表示の台帳がなく、地番の台帳にもこの番地がありません。台帳の欠けとみて、住居表示と推測しました。 }
                     candidates:
                       - kind: jukyo
                         tags:
@@ -132,7 +132,7 @@ paths:
                       - { value: 北本町一丁目, role: neighbourhood, tagged: true }
                       - { value: '2', role: block_number, tagged: true }
                       - { value: '6', role: housenumber, tagged: true }
-                      - { value: 中村ビル3階 301号室, role: remainder, tagged: false }
+                      - { value: 中村ビル3階 301号室, role: remainder, tagged: false, basis: 建物名「中村ビル」、階「3」、部屋番号「301」は、番地の後ろの文字列から推測した候補です。 }
                     candidates:
                       - kind: jukyo
                         tags:
@@ -153,7 +153,7 @@ paths:
                     result: unresolved
                     message: 町字を特定できず、住所を分けられませんでした。この住所は改善のために記録します。
                     segments:
-                      - { value: 存在しない県の何か, role: remainder, tagged: false }
+                      - { value: 存在しない県の何か, role: remainder, tagged: false, basis: 町字を特定できなかったため、残りを分けていません。 }
                     candidates: []
         '400':
           description: JSONとして読めない、`address`が無い、空、文字列でない
@@ -305,6 +305,9 @@ components:
         tagged:
           type: boolean
           description: その区切りが、どれかの候補のタグになったかどうか
+        basis:
+          type: string
+          description: 推測した区切りと、タグにしない区切りの根拠（日本語）。人に見せるためのもので、文面で分岐しないでください。台帳と照合した区切りでは省きます
     SegmentRole:
       type: string
       description: |

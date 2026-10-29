@@ -90,6 +90,7 @@ details .actions { margin-top: 6px; }
 .structure :is(th, td) { padding: 4px 8px 4px 0; vertical-align: top; overflow-wrap: anywhere; }
 .structure td { border-bottom: 1px solid var(--line); }
 .structure code { font-family: var(--font-tag); font-size: 0.92em; }
+.structure .basis { display: block; font-size: 0.8rem; color: var(--muted); }
 @media (prefers-reduced-motion: no-preference) {
   .primary { transition: opacity 0.15s; }
 }
@@ -283,34 +284,40 @@ function renderStructure(data, primary) {
   for (const s of data.segments) {
     if (PLACE[s.role]) {
       const [role, key] = PLACE[s.role];
-      rows.push([s.value, role, tagCell(s.tagged && key in tags ? [key] : [])]);
+      rows.push([s.value, role, tagCell(s.tagged && key in tags ? [key] : []), s.basis]);
     } else if (s.role === "number_undecided") {
       const keys = ["addr:block_number", "addr:housenumber"].filter((k) => k in tags);
-      if (primary?.guessed && keys.length > 0) rows.push([s.value, "番地（推測）", tagCell(keys)]);
-      else rows.push([s.value, "番地（住居表示か地番か未定）", tagCell([])]);
+      if (primary?.guessed && keys.length > 0) rows.push([s.value, "番地（推測）", tagCell(keys), s.basis]);
+      else rows.push([s.value, "番地（住居表示か地番か未定）", tagCell([]), s.basis]);
     } else if (s.role === "chiban") {
-      rows.push([s.value, "地番", tagCell([])]);
+      rows.push([s.value, "地番", tagCell([]), s.basis]);
     } else if (s.role === "extra_number") {
-      rows.push([s.value, "番地の続き", tagCell([])]);
+      rows.push([s.value, "番地の続き", tagCell([]), s.basis]);
     } else if (s.role === "unlisted_place") {
-      rows.push([s.value, "台帳に無い字名や通称", tagCell([])]);
+      rows.push([s.value, "台帳に無い字名や通称", tagCell([]), s.basis]);
     } else if (s.role === "remainder") {
       const keys = OPTIONAL_KEYS.filter((k) => optionalTags[k] !== undefined);
       const parts = keys.length > 0 ? splitRemainder(s.value, optionalTags) : null;
       if (parts) {
-        for (const [k, text] of parts) rows.push([text, `${OPTIONAL_ROLE[k]}（推測）`, tagCell([k], "（候補）")]);
+        // 根拠は切り分けた行の先頭にだけ出す
+        parts.forEach(([k, text], i) => rows.push([text, `${OPTIONAL_ROLE[k]}（推測）`, tagCell([k], "（候補）"), i === 0 ? s.basis : undefined]));
       } else if (keys.length > 0) {
-        rows.push([s.value, "建物名など（推測）", tagCell(keys, "（候補）")]);
+        rows.push([s.value, "建物名など（推測）", tagCell(keys, "（候補）"), s.basis]);
       } else {
-        rows.push([s.value, "建物名など", tagCell([])]);
+        rows.push([s.value, "建物名など", tagCell([]), s.basis]);
       }
     } else {
-      rows.push([s.value, s.role, tagCell([])]);
+      rows.push([s.value, s.role, tagCell([]), s.basis]);
     }
   }
   const table = el("table", {}, [
     el("thead", {}, el("tr", {}, ["区切り", "役割", "タグ"].map((t) => el("th", { scope: "col", text: t })))),
-    el("tbody", {}, rows.map(([value, role, cell]) => el("tr", {}, [el("td", { text: value }), el("td", { text: role }), cell]))),
+    el("tbody", {}, rows.map(([value, role, cell, basis]) => el("tr", {}, [
+      el("td", { text: value }),
+      // 推測した区切りとタグにしない区切りは、役割の下に根拠を出す
+      el("td", {}, [role, basis ? el("span", { class: "basis", text: basis }) : null]),
+      cell,
+    ]))),
   ]);
   structureBody.replaceChildren(table);
   structure.hidden = false;
