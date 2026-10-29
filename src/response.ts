@@ -7,6 +7,15 @@ import type { Candidate, CandidateKind, ParseResponse, ResultKind, Segment, Segm
 const TOWN_KEYS = ['addr:province', 'addr:county', 'addr:city', 'addr:suburb', 'addr:quarter', 'addr:neighbourhood'] as const
 const NUMBER_KEYS = ['addr:block_number', 'addr:housenumber'] as const
 
+// 地番の前に挟まった地名と、地番の冠称（甲乙、イロハ、十二支）。冠称は地番の一部なので地名にはしない
+const PREFIXED = /^(.*?)([甲乙丙丁戊己庚辛壬癸イロハニホヘトチリヌルヲ子丑寅卯辰巳午未申酉戌亥]?)(\d+(?:-\d+)*)(?![\d番丁条号街区階FＦ・])/u
+// 地名は「字」「小字」を書いたものはカナも認め、書かないものは漢字2〜6文字に限る。
+// 建物名や、町字の誤照合で残った1文字（「町」など）を地名と読まないため。
+// 書かないものからは、市や郡を書き重ねた住所と、「番」「第」を含むもの（番地82、永田第5ビル）を除く。
+// 数字の後ろが階や「・」のもの（明治館1階、札幌2・2ビル）は建物名として PREFIXED で除く
+const PLACE_WITH_AZA = /^小?字[\p{sc=Han}\p{sc=Katakana}々ヶケノのー]{1,10}$/u
+const PLACE_BARE = /^(?!.*[都道府県市郡番第])[\p{sc=Han}々ヶケノの]{2,6}$/u
+
 // 区切りの並びと役割。ward は addr:suburb（政令市の区）に当たる
 const PLACE_ROLES: [keyof OsmTags, SegmentRole][] = [
   ['addr:province', 'prefecture'], ['addr:county', 'county'], ['addr:city', 'city'],
@@ -28,7 +37,11 @@ type Plan = { result: ResultKind; kinds: CandidateKind[]; message: string; numbe
 export function buildResponse(args: BuildArgs): ParseResponse {
   const { postcode, conversion, other, townOther, chibanNumber, judgement } = args
   const tags = conversion.tags
-  const parsed = parseNumberElements(other)
+  // 住居表示を実施していない町字の住所だけ、番地の前に挟まった台帳に無い字名や通称と、地番の冠称を切り出す。
+  // 地番の台帳と照合した住所（noNumberReason が chiban）は、NJA が番地を other から取り除いているので、
+  // other に残った建物名を地名と読んでしまう
+  const prefixed = conversion.noNumberReason === 'rsdt-not-implemented'
+  const parsed = splitNumbers(other, prefixed)
   // 町字が決まらなかった住所は、残りを番地と読まずそのまま remainder に回す
   const unresolved = conversion.numberSource === 'none' && (!conversion.noNumberReason || conversion.noNumberReason === 'machiaza-unresolved')
   const elements = unresolved ? [] : parsed.elements
@@ -43,7 +56,7 @@ export function buildResponse(args: BuildArgs): ParseResponse {
   } else if (chibanNumber) {
     n = chibanNumber
   } else {
-    n = elements.slice(0, 2).join('-')
+    n = parsed.kanmuri + elements.slice(0, 2).join('-')
     extras = elements.slice(2)
   }
 
@@ -54,8 +67,8 @@ export function buildResponse(args: BuildArgs): ParseResponse {
   // addr:full と建物名などの候補は、地番の台帳の値ではなく貼った文字列から作る
   // townOther が無い照合済みの住居表示は、other から番地が取り除かれているので、台帳（住居表示）の街区と住居番号で補う
   const fallbackNumber = townOther === undefined && conversion.numberSource === 'verified' ? n : ''
-  const full = unresolved ? undefined : buildFull(tags, townOther ?? other, fallbackNumber)
-  const building = unresolved ? {} : splitBuilding(parseNumberElements(townOther ?? other).rest)
+  const full = unresolved ? undefined : buildFull(tags, townOther ?? other, fallbackNumber, prefixed)
+  const building = unresolved ? {} : splitBuilding(splitNumbers(townOther ?? other, prefixed).rest)
   const candidates: Candidate[] = plan.kinds.map((kind) => {
     const c: Candidate = { kind, tags: pickTags(postcode, tags, kind === 'jukyo') }
     if (full) c.tags['addr:full'] = full
@@ -72,6 +85,7 @@ export function buildResponse(args: BuildArgs): ParseResponse {
     const value = tags[key]
     if (value) segments.push({ value, role, tagged })
   }
+  if (parsed.place) segments.push({ value: parsed.place, role: 'unlisted_place', tagged: false })
   segments.push(...numberSegments(conversion, plan, n, elements))
   const extra = extras.join('-')
   if (extra) segments.push({ value: extra, role: 'extra_number', tagged: false })
@@ -164,11 +178,35 @@ function pickTags(postcode: string | undefined, tags: OsmTags, withNumber: boole
 
 // 町字までの値、貼った文字列の番地、建物名などの残りをつなぐ。郵便番号は入れない
 // fallbackNumber は other に番地が無いときの番地（住居表示の台帳の値だけ）。地番の台帳の値は渡さない
-function buildFull(tags: OsmTags, other: string, fallbackNumber: string): string {
-  const { elements, rest } = parseNumberElements(other)
-  const place = TOWN_KEYS.map((k) => tags[k] ?? '').join('')
+function buildFull(tags: OsmTags, other: string, fallbackNumber: string, prefixed: boolean): string {
+  const { place: unlisted, kanmuri, elements, rest } = splitNumbers(other, prefixed)
+  const place = TOWN_KEYS.map((k) => tags[k] ?? '').join('') + unlisted
   const number = [fallbackNumber, ...elements].filter(Boolean).join('-')
-  return place + number + (rest ? ` ${rest}` : '')
+  return place + kanmuri + number + (rest ? ` ${rest}` : '')
+}
+
+type NumberSplit = { place: string; kanmuri: string; elements: string[]; rest: string }
+
+// 番地の要素と残りに分ける。prefixed なら、町字の後ろに挟まった台帳に無い字名や通称と、
+// 地番の冠称を、番地の前から切り出す（字大多志243-19、南国広1-1、甲1100-4 など）
+function splitNumbers(other: string, prefixed: boolean): NumberSplit {
+  const parsed = parseNumberElements(other)
+  const plain = { place: '', kanmuri: '', ...parsed }
+  if (!prefixed || parsed.elements.length > 0) return plain
+  const m = PREFIXED.exec(parsed.rest)
+  if (!m) return plain
+  let place = m[1]!
+  let kanmuri = m[2]!
+  // 字名の後ろでは甲乙丙丁だけを冠称とする。字市上リ のようなカナの字名の末尾を冠称と読まないため
+  if (place && kanmuri && !'甲乙丙丁'.includes(kanmuri)) {
+    place += kanmuri
+    kanmuri = ''
+  }
+  if (!place && !kanmuri) return plain
+  const isPlace = PLACE_WITH_AZA.test(place) || PLACE_BARE.test(place)
+  if (place && (!isPlace || place.startsWith('大字') || place.endsWith('丁目'))) return plain
+  const after = parseNumberElements(parsed.rest.slice(place.length + kanmuri.length))
+  return { place, kanmuri, elements: after.elements, rest: after.rest }
 }
 
 function joinNonEmpty(parts: (string | undefined)[]): string {

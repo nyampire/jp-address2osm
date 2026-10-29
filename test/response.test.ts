@@ -259,3 +259,97 @@ test('unresolved には addr:full も optionalTags も無い', () => {
   assert.deepEqual(r.candidates, [])
   assert.doesNotMatch(JSON.stringify(r), /addr:full|optionalTags/)
 })
+
+// 町字の後ろに、台帳に無い字名や通称、地番の冠称が挟まった地番の住所
+const notImplemented: ConversionResult = { tags: town, numberSource: 'none', noNumberReason: 'rsdt-not-implemented', extra: {} }
+const tsuruga: ConversionResult = {
+  tags: { 'addr:province': '福井県', 'addr:city': '敦賀市', 'addr:quarter': '津内', 'addr:neighbourhood': '109号' },
+  numberSource: 'none', noNumberReason: 'rsdt-not-implemented', extra: {},
+}
+
+test('台帳に無い字名の後ろの数字は地番になり、字名はタグにしない区切りになる', () => {
+  const r = buildResponse({ conversion: notImplemented, other: '字大多志243-19', townOther: '字大多志243-19', judgement: '' })
+  assert.deepEqual(r.segments.slice(-2), [
+    { value: '字大多志', role: 'unlisted_place', tagged: false },
+    { value: '243-19', role: 'chiban', tagged: false },
+  ])
+  assert.equal('optionalTags' in r.candidates[0]!, false)
+  assert.equal(r.candidates[0]!.tags['addr:full'], '高知県四万十市中村一条通三丁目字大多志243-19')
+  assert.equal(r.candidates[0]!.note, '地番の「243-19」はタグにしません。')
+})
+
+test('敦賀市津内109号南国広1-1 の南国広は建物名にならない', () => {
+  const r = buildResponse({ conversion: tsuruga, other: '南国広1-1', townOther: '南国広1-1', judgement: '' })
+  assert.deepEqual(r.segments.slice(-3), [
+    { value: '109号', role: 'neighbourhood', tagged: true },
+    { value: '南国広', role: 'unlisted_place', tagged: false },
+    { value: '1-1', role: 'chiban', tagged: false },
+  ])
+  assert.equal('optionalTags' in r.candidates[0]!, false)
+  assert.equal(r.candidates[0]!.tags['addr:full'], '福井県敦賀市津内109号南国広1-1')
+})
+
+test('地番の冠称は地番に含め、地名の区切りにしない', () => {
+  const r = buildResponse({ conversion: notImplemented, other: '甲1100-4', judgement: '' })
+  assert.deepEqual(r.segments.at(-1), { value: '甲1100-4', role: 'chiban', tagged: false })
+  assert.equal(r.segments.some((s) => s.role === 'unlisted_place'), false)
+  assert.equal('optionalTags' in r.candidates[0]!, false)
+})
+
+test('字名の後ろの冠称も地番に含める', () => {
+  const r = buildResponse({ conversion: notImplemented, other: '字大道下甲401-2', judgement: '' })
+  assert.deepEqual(r.segments.slice(-2), [
+    { value: '字大道下', role: 'unlisted_place', tagged: false },
+    { value: '甲401-2', role: 'chiban', tagged: false },
+  ])
+})
+
+test('字名と地番の後ろの建物名と階は、これまでどおり optionalTags になる', () => {
+  const r = buildResponse({ conversion: notImplemented, other: '字新田193-1 大里メディカルプラザ2階', judgement: '' })
+  assert.deepEqual(r.candidates[0]!.optionalTags, { 'addr:housename': '大里メディカルプラザ', 'addr:floor': '2' })
+  assert.deepEqual(r.segments.slice(-3).map((s) => s.role), ['unlisted_place', 'chiban', 'remainder'])
+})
+
+test('建物名、残った丁目、町字の誤照合の残りは、地名と地番に分けない', () => {
+  for (const other of ['エリタージュ101', '敷島ビル407', '四丁目6-3', '町13-18', '大字4156-7', '俵津3番耕地228']) {
+    const r = buildResponse({ conversion: notImplemented, other, judgement: '' })
+    assert.equal(r.segments.some((s) => s.role === 'unlisted_place' || s.role === 'chiban'), false, other)
+    assert.equal(r.segments.at(-1)?.role, 'remainder', other)
+  }
+})
+
+test('地番の住所でなければ、字名と数字に分けない', () => {
+  const r = buildResponse({ conversion: { tags: town, numberSource: 'none', noNumberReason: 'rsdt-detail-missing', extra: {} },
+    other: '字向山35-158', judgement: '' })
+  assert.equal(r.segments.some((s) => s.role === 'unlisted_place'), false)
+  assert.deepEqual(r.candidates[0]!.optionalTags, { 'addr:housename': '字向山35-158' })
+})
+
+test('地番の台帳と照合した住所では、番地の後ろの建物名を地名と地番に分けない', () => {
+  const r = buildResponse({ conversion: chibanConv, other: '髙橋第6ビル1階', townOther: '173 髙橋第6ビル1階', chibanNumber: '173', judgement: '' })
+  assert.equal(r.segments.some((s) => s.role === 'unlisted_place'), false)
+  assert.deepEqual(r.segments.slice(-2), [
+    { value: '173', role: 'chiban', tagged: false },
+    { value: '髙橋第6ビル1階', role: 'remainder', tagged: false },
+  ])
+})
+
+test('番地、階、ビルの通し番号、市の書き重ねは、地名と地番に分けない', () => {
+  for (const other of ['番地82くらはしメディカルセンター', '永田第5ビル1F', '明治館1階', '札幌2・2ビル2階', '白里市四天木乙2827-21']) {
+    const r = buildResponse({ conversion: notImplemented, other, judgement: '' })
+    assert.equal(r.segments.some((s) => s.role === 'unlisted_place' || s.role === 'chiban'), false, other)
+  }
+})
+
+test('数字の途中で地番を切らない', () => {
+  const r = buildResponse({ conversion: notImplemented, other: '字新田12階', judgement: '' })
+  assert.equal(r.segments.some((s) => s.role === 'chiban'), false)
+})
+
+test('「ケ」を含む通称も地名として切り出す', () => {
+  const r = buildResponse({ conversion: tsuruga, other: '岩ケ鼻1-11', judgement: '' })
+  assert.deepEqual(r.segments.slice(-2), [
+    { value: '岩ケ鼻', role: 'unlisted_place', tagged: false },
+    { value: '1-11', role: 'chiban', tagged: false },
+  ])
+})

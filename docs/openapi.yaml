@@ -321,6 +321,7 @@ components:
         - `number_undecided`: 住居表示の街区符号と住居番号か、地番か、決められない番地（候補によって異なる）
         - `chiban`: 地番（タグにしません）
         - `extra_number`: 番地の3つ目以降の要素（タグにしません）
+        - `unlisted_place`: 町字と地番の間にある、台帳に無い字名や通称（タグにしません）
         - `remainder`: 建物名や階数などの残り（タグにしません）
       enum:
         - postcode
@@ -335,6 +336,7 @@ components:
         - number_undecided
         - chiban
         - extra_number
+        - unlisted_place
         - remainder
     Candidate:
       type: object

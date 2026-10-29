@@ -292,6 +292,8 @@ function renderStructure(data, primary) {
       rows.push([s.value, "地番", tagCell([])]);
     } else if (s.role === "extra_number") {
       rows.push([s.value, "番地の続き", tagCell([])]);
+    } else if (s.role === "unlisted_place") {
+      rows.push([s.value, "台帳に無い字名や通称", tagCell([])]);
     } else if (s.role === "remainder") {
       const keys = OPTIONAL_KEYS.filter((k) => optionalTags[k] !== undefined);
       const parts = keys.length > 0 ? splitRemainder(s.value, optionalTags) : null;
