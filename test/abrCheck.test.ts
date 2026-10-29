@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { newerThan, parseHubResponse } from '../src/abrCheck.ts'
+import { newerThan, parseHubResponse, parseLastModified } from '../src/abrCheck.ts'
 
 test('parseHubResponse はタイトルと modified（ミリ秒）を読む', () => {
   const datasets = parseHubResponse({
@@ -26,4 +26,10 @@ test('newerThan は since より新しいものだけを新しい順に返す', 
     d('もっと新しい', '2026-10-24T00:00:00Z'),
   ], since)
   assert.deepEqual(result.map((x) => x.title), ['もっと新しい', '新しい'])
+})
+
+test('parseLastModified は Last-Modified の日時を読み、無いか読めなければ例外を投げる', () => {
+  assert.equal(parseLastModified('Thu, 29 Oct 2026 01:14:16 GMT').toISOString(), '2026-10-29T01:14:16.000Z')
+  assert.throws(() => parseLastModified(null))
+  assert.throws(() => parseLastModified('yesterday'))
 })

@@ -36,3 +36,13 @@ export function hubSearchUrl(): string {
     + `&q=${encodeURIComponent('マスター')}`
     + '&sortBy=-properties.modified'
 }
+
+// ABR は、検索の応答の modified を変えずにファイルだけを差し替えることがある（2026-10-29 に全国 町字マスターで見た）。
+// ファイルの Last-Modified も見る。作り直しが最初に読む全国 町字マスターで確かめる
+export const TOWN_ALL_URL = 'https://data.address-br.digital.go.jp/mt_town/mt_town_all.csv.zip'
+
+export function parseLastModified(header: string | null): Date {
+  const date = new Date(header ?? '')
+  if (Number.isNaN(date.getTime())) throw new Error(`Last-Modified が読めません: ${header}`)
+  return date
+}
