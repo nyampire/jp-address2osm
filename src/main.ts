@@ -14,6 +14,9 @@ if (!rawBase) {
   process.stderr.write('NJA_API_BASE が必要です（file:// かパス）\n')
   process.exit(1)
 }
+// worker は process.env を写して起動するので、作り直された worker も起動時の版を読む
+const { pinDataPath } = await import('./dataPath.ts')
+process.env.NJA_API_BASE = pinDataPath(rawBase)
 const { applyApiBase } = await import('../vendor/nja-osm-tags/src/apiBase.ts')
 let apiBase: string | undefined
 try {
